@@ -161,34 +161,35 @@
 		return 0
 
 	var/safe_oxy_min = 16
-	var/safe_co2_max = 10
 	var/safe_tox_max = 0.05
 	var/SA_para_min = 1
 	var/SA_sleep_min = 5
 	var/oxygen_used = 0
+	var/safe_co2_max_percent = 1.5 //When you start sighing
+	var/yawning_co2_max_percent = 3 //Yawning
+	var/danger_co2_max_percent = 5 //Gasping and effects
+	var/lethal_co2_max_percent = 8 //Unconsciousness and possible death
 	var/breath_pressure = (breath.total_moles()*R_IDEAL_GAS_EQUATION*breath.return_temperature())/BREATH_VOLUME
 
 	var/O2_partialpressure = (breath.get_moles(/datum/gas/oxygen)/breath.total_moles())*breath_pressure
 	var/Toxins_partialpressure = (breath.get_moles(/datum/gas/plasma)/breath.total_moles())*breath_pressure
 	var/CO2_partialpressure = (breath.get_moles(/datum/gas/carbon_dioxide)/breath.total_moles())*breath_pressure
+	var/CO2_percentage_in_air = breath.get_moles(/datum/gas/carbon_dioxide)/breath.total_moles()
 
 
 	//OXYGEN
-	if(O2_partialpressure < safe_oxy_min) //Not enough oxygen
-		if(prob(20))
-			emote("gasp")
-		if(O2_partialpressure > 0)
+	if(O2_partialpressure < safe_oxy_min) //Oxygen no longer alerts the body like real life
+		if(!lowoxytime)
+			lowoxytime = world.time
+		else if(O2_partialpressure > 0)
 			var/ratio = 1 - O2_partialpressure/safe_oxy_min
-			adjustOxyLoss(min(5*ratio, 3))
+			adjustOxyLoss(5*ratio+(((world.time - lowoxytime)/20)))
 			failed_last_breath = 1
 			oxygen_used = breath.get_moles(/datum/gas/oxygen)*ratio
-		else
-			adjustOxyLoss(3)
-			failed_last_breath = 1
 		throw_alert("not_enough_oxy", /obj/screen/alert/not_enough_oxy)
-
-	else //Enough oxygen
+	else
 		failed_last_breath = 0
+		lowoxytime = 0
 		if(health >= crit_threshold)
 			adjustOxyLoss(-5)
 		oxygen_used = breath.get_moles(/datum/gas/oxygen)
@@ -198,19 +199,30 @@
 	breath.adjust_moles(/datum/gas/carbon_dioxide, oxygen_used)
 
 	//CARBON DIOXIDE
-	if(CO2_partialpressure > safe_co2_max)
+	if(CO2_percentage_in_air > lethal_co2_max_percent)
 		if(!co2overloadtime)
 			co2overloadtime = world.time
 		else if(world.time - co2overloadtime > 120)
-			Unconscious(60)
-			adjustOxyLoss(3)
+			adjustToxLoss(3)
 			if(world.time - co2overloadtime > 300)
-				adjustOxyLoss(8)
+				adjustToxLoss(8)
+				Unconscious(60)
 		if(prob(20))
-			emote("cough")
+			emote("gasp")
 
 	else
 		co2overloadtime = 0
+	if(CO2_percentage_in_air > safe_co2_max_percent && CO2_percentage_in_air <= yawning_co2_max_percent)
+		if(prob(20))
+			emote("sigh")
+			to_chat(owner, "<span class='warning'>You're feeling a bit tired</span>")
+		owner.drowsyness += 5
+	else if(CO2_percentage_in_air > yawning_co2_max_percent)
+		if(prob(20))
+			emote("yawn")
+			to_chat(owner, "<span class='warning'>You're feeling pretty tired</span>")
+		owner.drowsyness += 10
+
 
 	//TOXINS/PLASMA
 	if(Toxins_partialpressure > safe_tox_max)
